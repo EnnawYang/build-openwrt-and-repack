@@ -1,0 +1,191 @@
+name: Build OpenWrt
+
+on:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: 'target: x86_64 | rpi-4b | newifi-d2'
+        required: true
+        default: 'x86_64'
+      distclean:
+        description: 'make distclean'
+        required: true
+        default: 'false'
+      rm_dl:
+        description: 'delete dl floder'
+        required: true
+        default: 'false'
+      iftar:
+        description: 'upload openwrt .tar to GoogleDrive'
+        required: true
+        default: 'true'
+      release:
+        description: 'release note'
+        required: true
+        default: 'update'
+
+env:
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  Notification: true
+  TZ: Asia/Shanghai
+
+jobs:
+  build_openwrt:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@main
+
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        docker image prune -a -f
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* powershell openjdk* mysql* php* android*
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2004)
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        chmod +x $GITHUB_WORKSPACE/script/*.sh
+        echo "TARGET_NAME=${{ github.event.inputs.name }}" >> $GITHUB_ENV
+        echo "MAKE_DISTCLEAN=${{ github.event.inputs.distclean }}" >> $GITHUB_ENV
+        echo "RM_DL=${{ github.event.inputs.rm_dl }}" >> $GITHUB_ENV
+        echo "IFTAR=${{ github.event.inputs.iftar }}" >> $GITHUB_ENV
+
+    - name: Check space usage
+      if: (!cancelled())
+      run: |
+        cd $GITHUB_WORKSPACE
+        df -hT $PWD
+
+    - name: Install Rclone
+      id: install_rclone
+      env:
+        RCLONE_NAME: ${{ secrets.RCLONE_NAME }}
+        RCLONE_CONFIG: ${{ secrets.RCLONE_CONFIG }}
+      if: env.RCLONE_NAME != null && env.RCLONE_CONFIG != null
+      run: |
+        curl https://rclone.org/install.sh | sudo bash
+        mkdir -p ~/.config/rclone/
+        cat << EOF > ~/.config/rclone/rclone.conf
+        ${{ secrets.RCLONE_CONFIG }}
+        EOF
+
+    - name: Download openwrt .tar
+      id: download
+      env: 
+        RCLONE_NAME: "${{ secrets.RCLONE_NAME }}"
+      if: steps.install_rclone.conclusion == 'success' && !cancelled()
+      run: |
+        cd $GITHUB_WORKSPACE
+        bash script/download-openwrt.sh
+
+    - name: Compile the firmware
+      id: compile
+      if: (!cancelled())
+      run: |
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        cd $GITHUB_WORKSPACE
+        bash script/build-openwrt.sh
+
+    - name: Check space usage
+      if: (!cancelled())
+      run: df -hT
+
+    - name: Upload error logs
+      uses: actions/upload-artifact@v2
+      if: steps.compile.conclusion == 'failure' && !cancelled()
+      with:
+        name: Error_logs_${{ env.TARGET_NAME }}${{ env.FILE_DATE }}
+        path: ${{ github.workspace }}/openwrt/logs
+
+    - name: Upload bin directory
+      uses: actions/upload-artifact@v2
+      if: steps.compile.conclusion == 'success' && env.UPLOAD_BIN_DIR == 'true' && !cancelled()
+      with:
+        name: OpenWrt_bin_${{ env.TARGET_NAME }}${{ env.FILE_DATE }}
+        path: ${{ github.workspace }}/openwrt/bin
+
+    - name: Organize files
+      id: organize
+      if: steps.compile.conclusion == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      run: |
+        cd $GITHUB_WORKSPACE/openwrt/bin/targets/*/*
+        rm -rf packages
+        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+
+    - name: Upload firmware directory
+      uses: actions/upload-artifact@v2
+      if: steps.organize.conclusion == 'success' && !cancelled()
+      with:
+        name: OpenWrt_firmware_${{ env.TARGET_NAME }}${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
+
+    - name: Upload firmware to Google Drive
+      if: steps.organize.conclusion == 'success' && !cancelled()
+      run: |
+        rclone copy ${{ env.FIRMWARE }} ${{ secrets.RCLONE_NAME }}:openwrt/$TARGET_NAME/$(date +"%Y-%m-%d-%H%M") --transfers=8
+
+    - name: Generate release tag
+      id: tag
+      if: steps.compile.conclusion == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
+      run: |
+        echo "::set-output name=release_tag::$TARGET_NAME-$(date +"%Y.%m.%d-%H%M")"
+        touch release.txt
+        echo -e "${{ github.event.inputs.release }}" > release.txt
+
+    - name: Upload firmware to release
+      uses: softprops/action-gh-release@v1
+      if: steps.tag.conclusion == 'success' && !cancelled()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body_path: release.txt
+        files: ${{ env.FIRMWARE }}/*
+
+    - name: tar openwrt floder
+      id: tar
+      if: steps.compile.conclusion == 'success' && env.IFTAR == 'true' && !cancelled()
+      run: |
+        cd $GITHUB_WORKSPACE
+        bash script/clean.sh
+        echo "tar openwrt floder"
+        tar cf $TARGET_NAME-openwrt.tar openwrt
+        df -hT $PWD
+        echo "rm openwrt floder"
+        rm -rf openwrt
+        df -hT $PWD
+
+    - name: upload openwrt .tar
+      id: upload_tar
+      if: steps.tar.conclusion == 'success' && env.IFTAR == 'true' && !cancelled()
+      run: |
+        rclone sync $TARGET_NAME-openwrt.tar ${{ secrets.RCLONE_NAME }}:openwrt/repack/ --transfers=8 -v
+
+    - name: Delete workflow runs
+      uses: GitRML/delete-workflow-runs@main
+      with:
+        retain_days: 1
+        keep_minimum_runs: 6
+
+    - name: Remove old Releases
+      uses: dev-drprasad/delete-older-releases@v0.2.0
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      with:
+        keep_latest: 6
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Notification
+      if: steps.compile.conclusion == 'success' && env.Notification == 'true' && !cancelled()
+      run: |
+        curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendMessage -d chat_id=${{ secrets.TG_CHAT_ID }} -d text=""$TARGET_NAME"使用Actions编译完成"
+        curl https://sctapi.ftqq.com/${{ secrets.SCTKEY }}.send?title=""$TARGET_NAME"使用Actions编译完成"
