@@ -8,10 +8,6 @@ on:
         description: 'target: x86_64 | rpi-4b | newifi-d2'
         required: true
         default: 'x86_64'
-      distclean:
-        description: 'make distclean'
-        required: true
-        default: 'false'
       rm_dl:
         description: 'delete dl floder'
         required: true
@@ -26,6 +22,12 @@ on:
         default: 'update'
 
 env:
+  REPO_URL: https://github.com/coolsnowwolf/lede
+  REPO_BRANCH: master
+  REPO_FLODER: openwrt
+  CONFIG_REPO: https://github.com/EnnawYang/Actions-OpenWrt
+  CONFIG_BRANCH: main
+  CONFIG_FLODER: Actions-OpenWrt
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
@@ -54,7 +56,6 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
         chmod +x $GITHUB_WORKSPACE/script/*.sh
         echo "TARGET_NAME=${{ github.event.inputs.name }}" >> $GITHUB_ENV
-        echo "MAKE_DISTCLEAN=${{ github.event.inputs.distclean }}" >> $GITHUB_ENV
         echo "RM_DL=${{ github.event.inputs.rm_dl }}" >> $GITHUB_ENV
         echo "IFTAR=${{ github.event.inputs.iftar }}" >> $GITHUB_ENV
 
@@ -77,9 +78,9 @@ jobs:
         ${{ secrets.RCLONE_CONFIG }}
         EOF
 
-    - name: Download openwrt .tar
+    - name: Download openwrt tar from GoogleDrive
       id: download
-      env: 
+      env:
         RCLONE_NAME: "${{ secrets.RCLONE_NAME }}"
       if: steps.install_rclone.conclusion == 'success' && !cancelled()
       run: |
@@ -103,20 +104,20 @@ jobs:
       if: steps.compile.conclusion == 'failure' && !cancelled()
       with:
         name: Error_logs_${{ env.TARGET_NAME }}${{ env.FILE_DATE }}
-        path: ${{ github.workspace }}/openwrt/logs
+        path: ${{ github.workspace }}/${{ env.REPO_FLODER }}/logs
 
     - name: Upload bin directory
       uses: actions/upload-artifact@v2
       if: steps.compile.conclusion == 'success' && env.UPLOAD_BIN_DIR == 'true' && !cancelled()
       with:
         name: OpenWrt_bin_${{ env.TARGET_NAME }}${{ env.FILE_DATE }}
-        path: ${{ github.workspace }}/openwrt/bin
+        path: ${{ github.workspace }}/${{ env.REPO_FLODER }}/bin
 
     - name: Organize files
       id: organize
       if: steps.compile.conclusion == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        cd $GITHUB_WORKSPACE/openwrt/bin/targets/*/*
+        cd $GITHUB_WORKSPACE/$REPO_FLODER/bin/targets/*/*
         rm -rf packages
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
 
@@ -128,7 +129,7 @@ jobs:
         path: ${{ env.FIRMWARE }}
 
     - name: Upload firmware to Google Drive
-      if: steps.organize.conclusion == 'success' && !cancelled()
+      if: steps.organize.conclusion == 'success' && steps.install_rclone.conclusion == 'success' && !cancelled()
       run: |
         rclone copy ${{ env.FIRMWARE }} ${{ secrets.RCLONE_NAME }}:openwrt/$TARGET_NAME/$(date +"%Y-%m-%d-%H%M") --transfers=8
 
@@ -152,20 +153,27 @@ jobs:
 
     - name: tar openwrt floder
       id: tar
-      if: steps.compile.conclusion == 'success' && env.IFTAR == 'true' && !cancelled()
+      if: steps.compile.conclusion == 'success' && steps.install_rclone.conclusion == 'success' && env.IFTAR == 'true' && !cancelled()
       run: |
-        cd $GITHUB_WORKSPACE
-        bash script/clean.sh
+        cd $GITHUB_WORKSPACE/$REPO_FLODER
+        make clean
+        [ -d files ] && rm -rf files
+        [ -d logs ] && rm -rf logs
+        [ -d tmp ] && rm -rf tmp
+        [ -d package/diy ] && rm -rf package/diy
+        [ -d dl/go-mod-cache ] && rm -rf dl/go-mod-cache
+        git reset --hard
         echo "tar openwrt floder"
-        tar cf $TARGET_NAME-openwrt.tar openwrt
+        cd $GITHUB_WORKSPACE
+        tar cf $TARGET_NAME-openwrt.tar $REPO_FLODER
         df -hT $PWD
         echo "rm openwrt floder"
-        rm -rf openwrt
+        rm -rf $REPO_FLODER
         df -hT $PWD
 
-    - name: upload openwrt .tar
+    - name: upload openwrt tar to GoogleDrive
       id: upload_tar
-      if: steps.tar.conclusion == 'success' && env.IFTAR == 'true' && !cancelled()
+      if: steps.tar.conclusion == 'success' && !cancelled()
       run: |
         rclone sync $TARGET_NAME-openwrt.tar ${{ secrets.RCLONE_NAME }}:openwrt/repack/ --transfers=8 -v
 
