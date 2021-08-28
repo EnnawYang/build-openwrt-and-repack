@@ -85,7 +85,14 @@ MAKE_COMPILE () {
     cd $WORKDIR/$REPO_FLODER
     echo -e "$GREEN>>>> $(nproc) thread compile ... $WHITE"
     STARTTIME=`date +'%Y-%m-%d %H:%M:%S'`
-    make -j$(nproc)
+    [[ $TOOLCHAIN == true ]] && make tools/compile -j$(nproc) && make toolchain/compile -j$(nproc)
+    make target/compile -j$(nproc) && \
+    make diffconfig && \
+    make package/compile -j$(nproc) && \
+    make package/index && \
+    make package/install -j$(nproc) && \
+    make target/install -j$(nproc) && \
+    make checksum
     if [ $? -eq 0 ]; then
         ENDTIME=`date +'%Y-%m-%d %H:%M:%S'`
         START_SECONDS=$(date --date="$STARTTIME" +%s);
@@ -96,7 +103,7 @@ MAKE_COMPILE () {
         echo -e "$GREEN>>>> download with $((DL_END_SECONDS-DL_START_SECONDS))s $WHITE"
         echo -e "$GREEN>>>> compile with $((END_SECONDS-START_SECONDS))s $WHITE"
     else
-        echo -e "$RED>>>> $(nproc) thread compile failed ... \n$YELLOW>>>> logs will be updated later ... $WHITE"
+        echo -e "$RED>>>> $(nproc) thread compile failed ... \n$YELLOW>>>> logs will be uploaded later ... $WHITE"
         exit 1
     fi
 }

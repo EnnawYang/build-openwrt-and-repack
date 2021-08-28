@@ -8,6 +8,10 @@ on:
         description: 'target: x86_64 | rpi-4b | newifi-d2'
         required: true
         default: 'x86_64'
+      toolchain: 
+        description: 'make toolchain'
+        required: true
+        default: 'true'
       rm_dl:
         description: 'delete dl floder'
         required: true
@@ -56,6 +60,7 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
         chmod +x $GITHUB_WORKSPACE/script/*.sh
         echo "TARGET_NAME=${{ github.event.inputs.name }}" >> $GITHUB_ENV
+        echo "TOOLCHAIN=${{ github.event.inputs.toolchain }}" >> $GITHUB_ENV
         echo "RM_DL=${{ github.event.inputs.rm_dl }}" >> $GITHUB_ENV
         echo "IFTAR=${{ github.event.inputs.iftar }}" >> $GITHUB_ENV
 
