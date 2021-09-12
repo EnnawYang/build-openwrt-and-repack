@@ -12,8 +12,8 @@
 - TG_BOT_TOKEN (可选，telegram bot token，用于通知)  
 - TG_CHAT_ID (可选，telegram id，用于通知)  
 
-项目调用 [P3TERX/Actions-OpenWrt](https://github.com/P3TERX/Actions-OpenWrt) 作为配置文件库，可以在yml中设置仓库地址  
-调用 `机型.config` 和 `机型-part2.sh` ，如果不存在则调用默认的 `.config` 和 `diy-part2.sh`  
+项目调用 [EnnawYang/Actions-OpenWrt](https://github.com/EnnawYang/Actions-OpenWrt) 作为配置文件库，可以在yml中设置仓库地址  
+调用 `机型.config` 和 `机型-customize.sh` ，如果不存在则调用 `.config` 和 `customize.sh`  
 
 ## 鸣谢
 [P3TERX/Actions-OpenWrt](https://github.com/P3TERX/Actions-OpenWrt)  

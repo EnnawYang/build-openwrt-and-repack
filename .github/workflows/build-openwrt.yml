@@ -119,8 +119,8 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE/$REPO_FLODER
         chmod +x $GITHUB_WORKSPACE/$CONFIG_FLODER/*.sh
-        ([ -e $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-part2.sh ] && bash $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-part2.sh) || \
-        (bash $GITHUB_WORKSPACE/$CONFIG_FLODER/diy-part2.sh && echo -e ""$TARGET_NAME"-part2.sh not found, use diy-part2.sh")
+        ([ -e $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh ] && bash $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh) || \
+        (bash $GITHUB_WORKSPACE/$CONFIG_FLODER/customize.sh && echo -e ""$TARGET_NAME"-customize.sh not found, use customize.sh")
         [ -e $GITHUB_WORKSPACE/$REPO_FLODER/.config ] && rm $GITHUB_WORKSPACE/$REPO_FLODER/.config*
         ([ -e $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config ] && cp $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config $GITHUB_WORKSPACE/$REPO_FLODER/.config) || \
         (cp $GITHUB_WORKSPACE/$CONFIG_FLODER/.config $GITHUB_WORKSPACE/$REPO_FLODER/.config && echo -e ""$TARGET_NAME".config not found, use .config")
