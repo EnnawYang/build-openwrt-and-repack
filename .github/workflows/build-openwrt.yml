@@ -9,15 +9,15 @@ on:
         required: true
         default: 'x86_64'
       toolchain: 
-        description: 'make toolchain'
+        description: 'make toolchain [true/false]'
         required: true
         default: 'true'
       rm_dl:
-        description: 'delete dl floder'
+        description: 'delete dl floder [true/false]'
         required: true
         default: 'false'
-      iftar:
-        description: 'upload openwrt .tar to GoogleDrive'
+      tar:
+        description: 'upload openwrt .tar to GoogleDrive [true/false]'
         required: true
         default: 'true'
       release:
@@ -43,31 +43,45 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@main
+    - name: Check space usage before Free up space
+      if: (!cancelled())
+      run: |
+        df -hT
+
+    - name: Free up space
+      uses: easimon/maximize-build-space@master
+      with:
+        root-reserve-mb: 256
+        swap-size-mb: 1024
+        remove-dotnet: 'true'
+        remove-android: 'true'
+        remove-haskell: 'true'
+        overprovision-lvm: 'true'
 
     - name: Initialization environment
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        docker image prune -a -f
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* powershell openjdk* mysql* php* android*
+        # docker image prune -a -f
+        # sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* powershell openjdk* mysql* php* android*
         sudo -E apt-get -qq update
-        sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2004) rdate
+        sudo -E apt-get -qq install tzdata $(curl -fsSL git.io/depends-ubuntu-2004) rdate
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
-        sudo timedatectl set-timezone "$TZ"
+        sudo ln -fs /usr/share/zoneinfo/$TZ /etc/localtime
+        sudo dpkg-reconfigure -f noninteractive tzdata
         echo "TARGET_NAME=${{ github.event.inputs.name }}" >> $GITHUB_ENV
         echo "TOOLCHAIN=${{ github.event.inputs.toolchain }}" >> $GITHUB_ENV
         echo "RM_DL=${{ github.event.inputs.rm_dl }}" >> $GITHUB_ENV
-        echo "IFTAR=${{ github.event.inputs.iftar }}" >> $GITHUB_ENV
+        echo "TAR=${{ github.event.inputs.tar }}" >> $GITHUB_ENV
 
-    - name: Check space usage
+    - name: Checkout
+      uses: actions/checkout@main
+
+    - name: Check space usage after Free up space
       if: (!cancelled())
       run: |
-        cd $GITHUB_WORKSPACE
-        df -hT $PWD
+        df -hT
 
     - name: Install Rclone
       id: install_rclone
@@ -82,7 +96,7 @@ jobs:
         ${{ secrets.RCLONE_CONFIG }}
         EOF
 
-    - name: Download openwrt tar from GoogleDrive
+    - name: Download openwrt from GoogleDrive
       id: download
       env:
         RCLONE_NAME: "${{ secrets.RCLONE_NAME }}"
@@ -137,21 +151,21 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: Compile the firmware
+    - name: Compile the firmware (${{ github.event.inputs.name }})
       id: compile
       if: (!cancelled())
       run: |
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
         cd $GITHUB_WORKSPACE/$REPO_FLODER
         echo -e ">>>> $(nproc) thread compile ..."
-        [[ $TOOLCHAIN == true ]] && make tools/compile -j$(nproc) && make toolchain/compile -j$(nproc)
-        make target/compile -j$(nproc) && \
+        ([[ $TOOLCHAIN == true ]] && make -j$(nproc)) || \
+        (make target/compile -j$(nproc) && \
         make diffconfig && \
         make package/compile -j$(nproc) && \
         make package/index && \
         make package/install -j$(nproc) && \
         make target/install -j$(nproc) && \
-        make checksum
+        make checksum)
 
     - name: Check space usage
       if: (!cancelled())
@@ -211,7 +225,7 @@ jobs:
 
     - name: tar openwrt floder
       id: tar
-      if: steps.compile.conclusion == 'success' && steps.install_rclone.conclusion == 'success' && env.IFTAR == 'true' && !cancelled()
+      if: steps.compile.conclusion == 'success' && steps.install_rclone.conclusion == 'success' && env.TAR == 'true' && !cancelled()
       run: |
         cd $GITHUB_WORKSPACE/$REPO_FLODER
         make clean
