@@ -15,9 +15,10 @@
 项目调用 [EnnawYang/Actions-OpenWrt](https://github.com/EnnawYang/Actions-OpenWrt) 作为配置文件库，可以在yml中设置仓库地址  
 调用 `机型.config` 和 `机型-customize.sh` ，如果不存在则调用 `.config` 和 `customize.sh`  
 
-## 鸣谢
+## Thanks
 [P3TERX/Actions-OpenWrt](https://github.com/P3TERX/Actions-OpenWrt)  
-[SuLingGG/OpenWrt-Rpi](https://github.com/SuLingGG/OpenWrt-Rpi)
+[SuLingGG/OpenWrt-Rpi](https://github.com/SuLingGG/OpenWrt-Rpi)  
+[klever1988/cachewrtbuild](https://github.com/klever1988/cachewrtbuild)
 
 ## 写在最后
 没有一定排错能力请不要使用本项目

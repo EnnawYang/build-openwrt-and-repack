@@ -8,10 +8,6 @@ on:
         description: 'target: x86_64 | rpi-4b | newifi-d2'
         required: true
         default: 'x86_64'
-      toolchain: 
-        description: 'make toolchain [true/false]'
-        required: true
-        default: 'true'
       rm_dl:
         description: 'delete dl floder [true/false]'
         required: true
@@ -71,7 +67,6 @@ jobs:
         sudo ln -fs /usr/share/zoneinfo/$TZ /etc/localtime
         sudo dpkg-reconfigure -f noninteractive tzdata
         echo "TARGET_NAME=${{ github.event.inputs.name }}" >> $GITHUB_ENV
-        echo "TOOLCHAIN=${{ github.event.inputs.toolchain }}" >> $GITHUB_ENV
         echo "RM_DL=${{ github.event.inputs.rm_dl }}" >> $GITHUB_ENV
         echo "TAR=${{ github.event.inputs.tar }}" >> $GITHUB_ENV
 
@@ -119,11 +114,11 @@ jobs:
         (echo ">>>> clone source code ..." && \
         git clone $REPO_URL -b $REPO_BRANCH $REPO_FLODER --single-branch)
         cd $GITHUB_WORKSPACE/$REPO_FLODER
-        ([ -d files ] && rm -rf files) || echo "files not found"
-        ([ -d logs ] && rm -rf logs) || echo "logs bot found"
-        ([ -d tmp ] && rm -rf tmp) || echo "tmp not found"
-        ([ -d package/diy ] && rm -rf package/diy) || echo "diy not found"
-        ([ -d dl/go-mod-cache ] && rm -rf dl/go-mod-cache) || echo "go-mod-cache not found"
+        ([ -d files ] && rm -rf files) || echo "files not found, skip"
+        ([ -d logs ] && rm -rf logs) || echo "logs bot found, skip"
+        ([ -d tmp ] && rm -rf tmp) || echo "tmp not found, skip"
+        ([ -d package/diy ] && rm -rf package/diy) || echo "diy not found, skip"
+        ([ -d dl/go-mod-cache ] && rm -rf dl/go-mod-cache) || echo "go-mod-cache not found, skip"
         git reset --hard
         git pull && ./scripts/feeds update -a && ./scripts/feeds install -a
 
@@ -150,6 +145,8 @@ jobs:
         make download -j16
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
+        ([ -d build_dir ] && find build_dir/{host*,toolchain-*} -name .built\* -exec touch {} \;) || echo "skip touch build_dir"
+        ([ -d staging_dir ] && touch staging_dir/{host*,toolchain-*}/stamp/.*) || echo "skip touch staging_dir"
 
     - name: Compile the firmware (${{ github.event.inputs.name }})
       id: compile
@@ -158,16 +155,9 @@ jobs:
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
         cd $GITHUB_WORKSPACE/$REPO_FLODER
         echo -e ">>>> $(nproc) thread compile ..."
-        ([[ $TOOLCHAIN == true ]] && make -j$(nproc)) || \
-        (make target/compile -j$(nproc) && \
-        make diffconfig && \
-        make package/compile -j$(nproc) && \
-        make package/index && \
-        make package/install -j$(nproc) && \
-        make target/install -j$(nproc) && \
-        make checksum)
+        make -j$(nproc)
 
-    - name: Check space usage
+    - name: Check space usage after Compile
       if: (!cancelled())
       run: df -hT
 
