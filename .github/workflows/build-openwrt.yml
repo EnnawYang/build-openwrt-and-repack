@@ -204,14 +204,14 @@ jobs:
         echo -e "${{ github.event.inputs.release }}" > release.txt
 
     - name: Upload firmware to release
-      uses: softprops/action-gh-release@v1
       if: steps.tag.conclusion == 'success' && !cancelled()
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: ncipollo/release-action@v1
       with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
-        body_path: release.txt
-        files: ${{ env.FIRMWARE }}/*
+        allowUpdates: true
+        token: ${{ secrets.GITHUB_TOKEN }}
+        tag: ${{ steps.tag.outputs.release_tag }}
+        bodyFile: release.txt
+        artifacts: ${{ env.FIRMWARE }}/*
 
     - name: tar openwrt floder
       id: tar
