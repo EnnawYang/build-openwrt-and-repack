@@ -133,7 +133,7 @@ jobs:
         [ -e $GITHUB_WORKSPACE/$REPO_FLODER/.config ] && rm $GITHUB_WORKSPACE/$REPO_FLODER/.config*
         ([ -e $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config ] && cp $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config $GITHUB_WORKSPACE/$REPO_FLODER/.config) || \
         (cp $GITHUB_WORKSPACE/$CONFIG_FLODER/.config $GITHUB_WORKSPACE/$REPO_FLODER/.config && echo -e ""$TARGET_NAME".config not found, use .config")
-        echo -e "\nCONFIG_DEVEL=y\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
+        echo -e "\nCONFIG_DEVEL=y\nCONFIG_CCACHE=y\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
         make defconfig
 
     - name: Download package
