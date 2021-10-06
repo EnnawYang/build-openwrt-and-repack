@@ -1,0 +1,213 @@
+name: Build OpenWrt
+
+on:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      rm_dl:
+        description: 'delete dl floder [true/false]'
+        required: true
+        default: 'false'
+      tar:
+        description: 'upload openwrt .tar to GoogleDrive [true/false]'
+        required: true
+        default: 'true'
+      release_note:
+        description: 'release note'
+        required: true
+        default: 'update'
+
+env:
+  REPO_URL: https://github.com/coolsnowwolf/lede
+  REPO_BRANCH: master
+  REPO_FLODER: openwrt
+  CONFIG_REPO: https://github.com/EnnawYang/Actions-OpenWrt
+  CONFIG_BRANCH: main
+  CONFIG_FLODER: Actions-OpenWrt
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  Notification: true
+  TZ: Asia/Shanghai
+
+jobs:
+  x86_64:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - name: Free up space
+      uses: easimon/maximize-build-space@master
+      with:
+        root-reserve-mb: 256
+        swap-size-mb: 1024
+        remove-dotnet: 'true'
+        remove-android: 'true'
+        remove-haskell: 'true'
+        overprovision-lvm: 'true'
+
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        # docker image prune -a -f
+        # sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* powershell openjdk* mysql* php* android*
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install tzdata $(curl -fsSL git.io/depends-ubuntu-2004) rdate
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo ln -fs /usr/share/zoneinfo/$TZ /etc/localtime
+        sudo dpkg-reconfigure -f noninteractive tzdata
+        echo "TARGET_NAME=${{ env.GITHUB_JOB }}" >> $GITHUB_ENV
+        echo "RM_DL=${{ github.event.inputs.rm_dl }}" >> $GITHUB_ENV
+        echo "TAR=${{ github.event.inputs.tar }}" >> $GITHUB_ENV
+
+    - name: Checkout
+      uses: actions/checkout@main
+
+    - name: Install Rclone
+      id: install_rclone
+      env:
+        RCLONE_NAME: ${{ secrets.RCLONE_NAME }}
+        RCLONE_CONFIG: ${{ secrets.RCLONE_CONFIG }}
+      if: env.RCLONE_NAME != null && env.RCLONE_CONFIG != null
+      run: |
+        curl https://rclone.org/install.sh | sudo bash
+        mkdir -p ~/.config/rclone/
+        cat << EOF > ~/.config/rclone/rclone.conf
+        ${{ secrets.RCLONE_CONFIG }}
+        EOF
+
+    - name: Download openwrt from GoogleDrive
+      id: download
+      env:
+        RCLONE_NAME: "${{ secrets.RCLONE_NAME }}"
+      if: steps.install_rclone.conclusion == 'success' && !cancelled()
+      run: |
+        cd $GITHUB_WORKSPACE
+        (rclone copy $RCLONE_NAME:openwrt/repack/$TARGET_NAME-openwrt.tar . --transfers=8 -v && \
+        tar -xvf $TARGET_NAME-openwrt.tar 2>&1 >/dev/null && \
+        rm *-openwrt.tar && \
+        sudo chown -R $USER:$GROUPS $REPO_FLODER) || \
+        echo ">>>> skip download ..."
+
+    - name: Update source code
+      id: source
+      if: (!cancelled())
+      run: |
+        cd $GITHUB_WORKSPACE
+        git clone $CONFIG_REPO -b $CONFIG_BRANCH $CONFIG_FLODER --single-branch
+        ([ -d $GITHUB_WORKSPACE/$REPO_FLODER/.git ] && echo ">>>> update source code ...") || \
+        (echo ">>>> clone source code ..." && \
+        git clone $REPO_URL -b $REPO_BRANCH $REPO_FLODER --single-branch)
+        cd $GITHUB_WORKSPACE/$REPO_FLODER
+        ([ -d files ] && rm -rf files) || echo "files not found, skip"
+        ([ -d logs ] && rm -rf logs) || echo "logs bot found, skip"
+        ([ -d tmp ] && rm -rf tmp) || echo "tmp not found, skip"
+        ([ -d package/diy ] && rm -rf package/diy) || echo "diy not found, skip"
+        ([ -d dl/go-mod-cache ] && rm -rf dl/go-mod-cache) || echo "go-mod-cache not found, skip"
+        git reset --hard
+        git pull && ./scripts/feeds update -a && ./scripts/feeds install -a
+
+    - name: Load custom configuration
+      id: custom
+      if: steps.source.conclusion == 'success' && !cancelled()
+      run: |
+        cd $GITHUB_WORKSPACE/$REPO_FLODER
+        chmod +x $GITHUB_WORKSPACE/$CONFIG_FLODER/*.sh
+        ([ -e $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh ] && bash $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh) || \
+        (bash $GITHUB_WORKSPACE/$CONFIG_FLODER/customize.sh && echo -e ""$TARGET_NAME"-customize.sh not found, use customize.sh")
+        [ -e $GITHUB_WORKSPACE/$REPO_FLODER/.config ] && rm $GITHUB_WORKSPACE/$REPO_FLODER/.config*
+        ([ -e $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config ] && cp $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config $GITHUB_WORKSPACE/$REPO_FLODER/.config) || \
+        (cp $GITHUB_WORKSPACE/$CONFIG_FLODER/.config $GITHUB_WORKSPACE/$REPO_FLODER/.config && echo -e ""$TARGET_NAME".config not found, use .config")
+        echo -e "\nCONFIG_DEVEL=y\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
+        make defconfig
+
+    - name: Download package
+      id: package
+      if: steps.custom.conclusion == 'success' && !cancelled()
+      run: |
+        cd $GITHUB_WORKSPACE/$REPO_FLODER
+        [[ $RM_DL == true ]] && [ -d $GITHUB_WORKSPACE/$REPO_FLODER/dl ] && rm -rf $GITHUB_WORKSPACE/$REPO_FLODER/dl
+        make download -j16
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+        ([ -d build_dir ] && find build_dir/{host*,toolchain-*} -name .built\* -exec touch {} \;) || echo "skip touch build_dir"
+        ([ -d staging_dir ] && touch staging_dir/{host*,toolchain-*}/stamp/.*) || echo "skip touch staging_dir"
+
+    - name: Compile the firmware (${{ github.event.inputs.name }})
+      id: compile
+      if: (!cancelled())
+      run: |
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        cd $GITHUB_WORKSPACE/$REPO_FLODER
+        echo -e ">>>> $(nproc) thread compile ..."
+        make -j$(nproc)
+
+    - name: Check space usage after Compile
+      if: (!cancelled())
+      run: df -hT
+
+    - name: Upload error logs
+      uses: actions/upload-artifact@v2
+      if: steps.compile.conclusion == 'failure' && !cancelled()
+      with:
+        name: Error_logs_${{ env.TARGET_NAME }}${{ env.FILE_DATE }}
+        path: ${{ github.workspace }}/${{ env.REPO_FLODER }}/logs
+
+    - name: Upload bin directory
+      uses: actions/upload-artifact@v2
+      if: steps.compile.conclusion == 'success' && env.UPLOAD_BIN_DIR == 'true' && !cancelled()
+      with:
+        name: OpenWrt_bin_${{ env.TARGET_NAME }}${{ env.FILE_DATE }}
+        path: ${{ github.workspace }}/${{ env.REPO_FLODER }}/bin
+
+    - name: Organize files
+      id: organize
+      if: steps.compile.conclusion == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      run: |
+        cd $GITHUB_WORKSPACE/$REPO_FLODER/bin/targets/*/*
+        rm -rf packages
+        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+
+    - name: Upload firmware directory
+      uses: actions/upload-artifact@v2
+      if: steps.organize.conclusion == 'success' && !cancelled()
+      with:
+        name: OpenWrt_firmware_${{ env.TARGET_NAME }}${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
+
+    - name: Upload firmware to Google Drive
+      if: steps.organize.conclusion == 'success' && steps.install_rclone.conclusion == 'success' && !cancelled()
+      run: |
+        rclone copy ${{ env.FIRMWARE }} ${{ secrets.RCLONE_NAME }}:openwrt/$TARGET_NAME/$(date +"%Y-%m-%d-%H%M") --transfers=8
+
+    - name: tar openwrt floder
+      id: tar
+      if: steps.compile.conclusion == 'success' && steps.install_rclone.conclusion == 'success' && env.TAR == 'true' && !cancelled()
+      run: |
+        cd $GITHUB_WORKSPACE/$REPO_FLODER
+        make clean
+        [ -d files ] && rm -rf files
+        [ -d logs ] && rm -rf logs
+        [ -d tmp ] && rm -rf tmp
+        [ -d package/diy ] && rm -rf package/diy
+        [ -d dl/go-mod-cache ] && rm -rf dl/go-mod-cache
+        git reset --hard
+        echo "tar openwrt floder"
+        cd $GITHUB_WORKSPACE
+        tar cf $TARGET_NAME-openwrt.tar $REPO_FLODER
+        df -hT $PWD
+        echo "rm openwrt floder"
+        rm -rf $REPO_FLODER
+        df -hT $PWD
+
+    - name: upload openwrt tar to GoogleDrive
+      id: upload_tar
+      if: steps.tar.conclusion == 'success' && !cancelled()
+      run: |
+        rclone sync $TARGET_NAME-openwrt.tar ${{ secrets.RCLONE_NAME }}:openwrt/repack/ --transfers=8 -v
+
+    - name: Notification
+      if: steps.compile.conclusion == 'success' && env.Notification == 'true' && !cancelled()
+      run: |
+        curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendMessage -d chat_id=${{ secrets.TG_CHAT_ID }} -d text=""$TARGET_NAME" compile succeeded" 2>&1 >/dev/null || echo "Telegram notification failed"
+        curl -s -X POST https://sctapi.ftqq.com/${{ secrets.SCTKEY }}.send?title=""$TARGET_NAME" compile succeeded" 2>&1 >/dev/null || echo "Wechat notification failed"
