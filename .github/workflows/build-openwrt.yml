@@ -17,6 +17,10 @@ on:
         required: true
         default: 'true'
       release:
+        description: 'upload firmware to release'
+        required: true
+        default: 'true'
+      release_note:
         description: 'release note'
         required: true
         default: 'update'
@@ -30,7 +34,6 @@ env:
   CONFIG_FLODER: Actions-OpenWrt
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
   Notification: true
   TZ: Asia/Shanghai
 
@@ -197,11 +200,11 @@ jobs:
 
     - name: Generate release tag
       id: tag
-      if: steps.compile.conclusion == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: github.event.inputs.release == 'true' && steps.compile.conclusion == 'success' && !cancelled()
       run: |
         echo "::set-output name=release_tag::$TARGET_NAME-$(date +"%Y.%m.%d-%H%M")"
         touch release.txt
-        echo -e "${{ github.event.inputs.release }}" > release.txt
+        echo -e "${{ github.event.inputs.release_note }}" > release.txt
 
     - name: Upload firmware to release
       if: steps.tag.conclusion == 'success' && !cancelled()
