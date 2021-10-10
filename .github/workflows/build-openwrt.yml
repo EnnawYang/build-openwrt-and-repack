@@ -4,30 +4,46 @@ on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
+      repo_url:
+        description: 'openwrt repo url'
+        required: true
+        default: 'https://github.com/coolsnowwolf/lede'
+      repo_branch:
+        description: 'openwrt repo branch'
+        required: true
+        default: 'master'
+      config_url:
+        description: 'config repo url'
+        required: true
+        default: 'https://github.com/EnnawYang/openwrt-config'
+      config_branch:
+        description: 'config repo branch'
+        required: true
+        default: 'lean-lede'
       rm_dl:
         description: 'delete dl floder [true/false]'
-        required: true
+        required: false
         default: 'false'
       tar:
         description: 'upload openwrt .tar to GoogleDrive [true/false]'
-        required: true
+        required: false
         default: 'true'
       release:
         description: 'upload firmware to release'
-        required: true
+        required: false
         default: 'true'
       release_note:
         description: 'release note'
-        required: true
+        required: false
         default: 'update'
 
 env:
-  REPO_URL: https://github.com/coolsnowwolf/lede
-  REPO_BRANCH: master
+  REPO_URL: ${{ github.event.inputs.repo_url }}
+  REPO_BRANCH: ${{ github.event.inputs.repo_branch }}
   REPO_FLODER: openwrt
-  CONFIG_REPO: https://github.com/EnnawYang/Actions-OpenWrt
-  CONFIG_BRANCH: main
-  CONFIG_FLODER: Actions-OpenWrt
+  CONFIG_REPO: ${{ github.event.inputs.config_url }}
+  CONFIG_BRANCH: ${{ github.event.inputs.config_branch }}
+  CONFIG_FLODER: config-repo
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   Notification: true
@@ -41,9 +57,10 @@ jobs:
     strategy:
       matrix:
         include:
+          # Ref: https://github.com/EnnawYang/openwrt-config
           - targets: "x86_64"
-          - targets: "rpi-4b"
-          - targets: "newifi-d2"
+          - targets: "Rpi-4B"
+          - targets: "Newifi-D2"
 
     steps:
     - name: Free up space
@@ -238,13 +255,13 @@ jobs:
         rclone sync $TARGET_NAME-openwrt.tar ${{ secrets.RCLONE_NAME }}:openwrt/repack/ --transfers=8 -v
 
     - name: Remove old Releases
-      uses: dev-drprasad/delete-older-releases@v0.2.0
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      uses: dev-drprasad/delete-older-releases@v0.2.0
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         keep_latest: 10
         delete_tags: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Notification
       if: steps.compile.conclusion == 'success' && env.Notification == 'true' && !cancelled()
