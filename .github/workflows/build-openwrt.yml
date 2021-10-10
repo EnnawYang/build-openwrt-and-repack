@@ -4,34 +4,50 @@ on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
+      repo_url:
+        description: 'openwrt repo url'
+        required: true
+        default: 'https://github.com/coolsnowwolf/lede'
+      repo_branch:
+        description: 'openwrt repo branch'
+        required: true
+        default: 'master'
+      config_url:
+        description: 'config repo url'
+        required: true
+        default: 'https://github.com/EnnawYang/openwrt-config'
+      config_branch:
+        description: 'config repo branch'
+        required: true
+        default: 'lean-lede'
       name:
-        description: 'target: x86_64 | rpi-4b | newifi-d2'
+        description: 'target: Ref: https://github.com/EnnawYang/openwrt-config'
         required: true
         default: 'x86_64'
       rm_dl:
         description: 'delete dl floder [true/false]'
-        required: true
+        required: false
         default: 'false'
       tar:
         description: 'upload openwrt .tar to GoogleDrive [true/false]'
-        required: true
+        required: false
         default: 'true'
       release:
-        description: 'upload firmware to release'
-        required: true
+        description: 'upload firmware to release [true/false]'
+        required: false
         default: 'true'
       release_note:
         description: 'release note'
-        required: true
+        required: false
         default: 'update'
 
 env:
-  REPO_URL: https://github.com/coolsnowwolf/lede
-  REPO_BRANCH: master
+  REPO_URL: ${{ github.event.inputs.repo_url }}
+  REPO_BRANCH: ${{ github.event.inputs.repo_branch }}
   REPO_FLODER: openwrt
-  CONFIG_REPO: https://github.com/EnnawYang/Actions-OpenWrt
-  CONFIG_BRANCH: main
-  CONFIG_FLODER: Actions-OpenWrt
+  CONFIG_REPO: ${{ github.event.inputs.config_url }}
+  CONFIG_BRANCH: ${{ github.event.inputs.config_branch }}
+  CONFIG_FLODER: config-repo
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   Notification: true
@@ -42,11 +58,6 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-    - name: Check space usage before Free up space
-      if: (!cancelled())
-      run: |
-        df -hT
-
     - name: Free up space
       uses: easimon/maximize-build-space@master
       with:
@@ -75,11 +86,6 @@ jobs:
 
     - name: Checkout
       uses: actions/checkout@main
-
-    - name: Check space usage after Free up space
-      if: (!cancelled())
-      run: |
-        df -hT
 
     - name: Install Rclone
       id: install_rclone
@@ -242,20 +248,14 @@ jobs:
       run: |
         rclone sync $TARGET_NAME-openwrt.tar ${{ secrets.RCLONE_NAME }}:openwrt/repack/ --transfers=8 -v
 
-    - name: Delete workflow runs
-      uses: GitRML/delete-workflow-runs@main
-      with:
-        retain_days: 1
-        keep_minimum_runs: 6
-
     - name: Remove old Releases
-      uses: dev-drprasad/delete-older-releases@v0.2.0
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-      with:
-        keep_latest: 5
-        delete_tags: true
+      uses: dev-drprasad/delete-older-releases@v0.2.0
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        keep_latest: 10
+        delete_tags: true
 
     - name: Notification
       if: steps.compile.conclusion == 'success' && env.Notification == 'true' && !cancelled()

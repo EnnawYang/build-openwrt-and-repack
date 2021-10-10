@@ -12,7 +12,8 @@
 - TG_BOT_TOKEN (可选，telegram bot token，用于通知)  
 - TG_CHAT_ID (可选，telegram id，用于通知)  
 
-项目调用 [EnnawYang/Actions-OpenWrt](https://github.com/EnnawYang/Actions-OpenWrt) 作为配置文件库，可以在yml中设置仓库地址  
+项目调用 [EnnawYang/openwrt-config](https://github.com/EnnawYang/openwrt-config) 作为配置文件库，可以在触发时设置仓库地址  
+带星号的为必填项，填错会导致失败  
 调用 `机型.config` 和 `机型-customize.sh` ，如果不存在则调用 `.config` 和 `customize.sh`  
 
 ## Thanks
@@ -21,4 +22,4 @@
 [klever1988/cachewrtbuild](https://github.com/klever1988/cachewrtbuild)
 
 ## 写在最后
-没有一定排错能力请不要使用本项目
+看不懂就不要用了
