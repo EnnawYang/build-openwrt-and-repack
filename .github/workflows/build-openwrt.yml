@@ -24,10 +24,10 @@ on:
         description: 'target: Ref: https://github.com/EnnawYang/openwrt-config'
         required: true
         default: 'x86_64'
-      rm_dl:
-        description: 'delete dl floder [true/false]'
+      toolchain:
+        description: 'skip compile toolchain [true/false]'
         required: false
-        default: 'false'
+        default: 'true'
       tar:
         description: 'upload openwrt .tar to GoogleDrive [true/false]'
         required: false
@@ -81,7 +81,7 @@ jobs:
         sudo ln -fs /usr/share/zoneinfo/$TZ /etc/localtime
         sudo dpkg-reconfigure -f noninteractive tzdata
         echo "TARGET_NAME=${{ github.event.inputs.name }}" >> $GITHUB_ENV
-        echo "RM_DL=${{ github.event.inputs.rm_dl }}" >> $GITHUB_ENV
+        echo "SKIP_TOOLCHAIN=${{ github.event.inputs.toolchain }}" >> $GITHUB_ENV
         echo "TAR=${{ github.event.inputs.tar }}" >> $GITHUB_ENV
 
     - name: Checkout
@@ -127,7 +127,7 @@ jobs:
         ([ -d logs ] && rm -rf logs) || echo "logs bot found, skip"
         ([ -d tmp ] && rm -rf tmp) || echo "tmp not found, skip"
         ([ -d package/diy ] && rm -rf package/diy) || echo "diy not found, skip"
-        ([ -d dl/go-mod-cache ] && rm -rf dl/go-mod-cache) || echo "go-mod-cache not found, skip"
+        ([ -d dl ] && rm -rf dl) || echo "dl not found, skip"
         git reset --hard
         git pull && ./scripts/feeds update -a && ./scripts/feeds install -a
 
@@ -137,11 +137,10 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE/$REPO_FLODER
         chmod +x $GITHUB_WORKSPACE/$CONFIG_FLODER/*.sh
-        ([ -e $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh ] && bash $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh) || \
-        (bash $GITHUB_WORKSPACE/$CONFIG_FLODER/customize.sh && echo -e ""$TARGET_NAME"-customize.sh not found, use customize.sh")
+        ([ -e $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh ] && bash $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh) || echo -e ""$TARGET_NAME"-customize.sh not found"
         [ -e $GITHUB_WORKSPACE/$REPO_FLODER/.config ] && rm $GITHUB_WORKSPACE/$REPO_FLODER/.config*
         ([ -e $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config ] && cp $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config $GITHUB_WORKSPACE/$REPO_FLODER/.config) || \
-        (cp $GITHUB_WORKSPACE/$CONFIG_FLODER/.config $GITHUB_WORKSPACE/$REPO_FLODER/.config && echo -e ""$TARGET_NAME".config not found, use .config")
+        (echo -e ""$TARGET_NAME".config not found" && exit 1)
         echo -e "\nCONFIG_DEVEL=y\nCONFIG_CCACHE=y\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
         make defconfig
 
@@ -150,12 +149,12 @@ jobs:
       if: steps.custom.conclusion == 'success' && !cancelled()
       run: |
         cd $GITHUB_WORKSPACE/$REPO_FLODER
-        [[ $RM_DL == true ]] && [ -d $GITHUB_WORKSPACE/$REPO_FLODER/dl ] && rm -rf $GITHUB_WORKSPACE/$REPO_FLODER/dl
+        [ -d $GITHUB_WORKSPACE/$REPO_FLODER/dl ] && rm -rf $GITHUB_WORKSPACE/$REPO_FLODER/dl
         make download -j16
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
-        ([ -d build_dir ] && find build_dir/{host*,toolchain-*} -name .built\* -exec touch {} \;) || echo "skip touch build_dir"
-        ([ -d staging_dir ] && touch staging_dir/{host*,toolchain-*}/stamp/.*) || echo "skip touch staging_dir"
+        (([[ $SKIP_TOOLCHAIN == true ]] && [ -d build_dir ]) && find build_dir/{host*,toolchain-*} -name .built\* -exec touch {} \;) || echo "skip touch build_dir"
+        (([[ $SKIP_TOOLCHAIN == true ]] && [ -d staging_dir ]) && touch staging_dir/{host*,toolchain-*}/stamp/.*) || echo "skip touch staging_dir"
 
     - name: Compile the firmware (${{ github.event.inputs.name }})
       id: compile
@@ -228,11 +227,11 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE/$REPO_FLODER
         make clean
+        [ -d dl ] && rm -rf dl
         [ -d files ] && rm -rf files
         [ -d logs ] && rm -rf logs
         [ -d tmp ] && rm -rf tmp
         [ -d package/diy ] && rm -rf package/diy
-        [ -d dl/go-mod-cache ] && rm -rf dl/go-mod-cache
         git reset --hard
         echo "tar openwrt floder"
         cd $GITHUB_WORKSPACE
