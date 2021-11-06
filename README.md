@@ -13,20 +13,19 @@
 - TG_BOT_TOKEN (可选，telegram bot token，用于通知)  
 - TG_CHAT_ID (可选，telegram id，用于通知)  
 
-项目调用 [EnnawYang/Actions-OpenWrt](https://github.com/EnnawYang/Actions-OpenWrt) 作为配置文件库，可以在yml中设置仓库地址  
+项目调用 [EnnawYang/openwrt-config](https://github.com/EnnawYang/openwrt-config) 作为配置文件库，可以触发时设置仓库地址  
 **重复打包的项目不可更换仓库地址，请重新拉取源码编译**  
 **带星号的为必填项，填错会导致失败**  
 调用 `机型.config` 和 `机型-customize.sh`  
 
 ## 使用方法
-增删target以增加或者减少机型,以下为示例：  
+yml中targets填写格式示例：  
 ```  
-strategy:
-  matrix:
-    include:
-      - targets: "x86_64"
+matrix:
+  targets: [x86_64, Rpi-4B, Newifi-D2]
 ```  
-引号内为机型，对应 `机型.config` 和 `机型-customize.sh` ，一行一个  
+**注意英文逗号和空格**  
+对应 `机型.config` 和 `机型-customize.sh`  
 
 ## Thanks
 [P3TERX/Actions-OpenWrt](https://github.com/P3TERX/Actions-OpenWrt)  

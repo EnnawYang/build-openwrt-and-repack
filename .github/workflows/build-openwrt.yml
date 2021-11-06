@@ -51,15 +51,11 @@ env:
 jobs:
   Build_OpenWrt:
     runs-on: ubuntu-20.04
-    env:
-      TARGET_NAME: ${{ matrix.targets }}
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          # Ref: https://github.com/EnnawYang/openwrt-config
-          - targets: "x86_64"
-          - targets: "Rpi-4B"
-          - targets: "Newifi-D2"
+        targets: [x86_64, Rpi-4B, Newifi-D2]
+        # Ref: https://github.com/EnnawYang/openwrt-config
 
     steps:
     - name: Free up space
