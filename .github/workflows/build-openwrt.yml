@@ -123,11 +123,7 @@ jobs:
         (echo ">>>> clone source code ..." && \
         git clone $REPO_URL -b $REPO_BRANCH $REPO_FLODER --single-branch)
         cd $GITHUB_WORKSPACE/$REPO_FLODER
-        ([ -d files ] && rm -rf files) || echo "files not found, skip"
-        ([ -d logs ] && rm -rf logs) || echo "logs bot found, skip"
-        ([ -d tmp ] && rm -rf tmp) || echo "tmp not found, skip"
-        ([ -d package/diy ] && rm -rf package/diy) || echo "diy not found, skip"
-        ([ -d dl ] && rm -rf dl) || echo "dl not found, skip"
+        rm -rf files logs tmp package/diy dl
         git reset --hard
         git pull && ./scripts/feeds update -a && ./scripts/feeds install -a
 
@@ -137,10 +133,10 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE/$REPO_FLODER
         chmod +x $GITHUB_WORKSPACE/$CONFIG_FLODER/*.sh
-        ([ -e $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh ] && bash $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh) || echo -e ""$TARGET_NAME"-customize.sh not found"
-        [ -e $GITHUB_WORKSPACE/$REPO_FLODER/.config ] && rm $GITHUB_WORKSPACE/$REPO_FLODER/.config*
-        ([ -e $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config ] && cp $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config $GITHUB_WORKSPACE/$REPO_FLODER/.config) || \
-        (echo -e ""$TARGET_NAME".config not found" && exit 1)
+        $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh || echo -e ""$TARGET_NAME"-customize.sh not found or has errors"
+        rm $GITHUB_WORKSPACE/$REPO_FLODER/.config*
+        cp $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config $GITHUB_WORKSPACE/$REPO_FLODER/.config || exit 1
+        sed -i '/CONFIG_DEVEL/d;/CONFIG_CCACHE/d;/CONFIG_BUILD_LOG/d' .config
         echo -e "\nCONFIG_DEVEL=y\nCONFIG_CCACHE=y\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
         make defconfig
 
@@ -227,11 +223,7 @@ jobs:
       run: |
         cd $GITHUB_WORKSPACE/$REPO_FLODER
         make clean
-        [ -d dl ] && rm -rf dl
-        [ -d files ] && rm -rf files
-        [ -d logs ] && rm -rf logs
-        [ -d tmp ] && rm -rf tmp
-        [ -d package/diy ] && rm -rf package/diy
+        rm -rf dl files logs tmp package/diy
         git reset --hard
         echo "tar openwrt floder"
         cd $GITHUB_WORKSPACE
