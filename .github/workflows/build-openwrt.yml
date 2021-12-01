@@ -135,7 +135,7 @@ jobs:
         cd $GITHUB_WORKSPACE/$REPO_FLODER
         chmod +x $GITHUB_WORKSPACE/$CONFIG_FLODER/*.sh
         $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh || echo -e ""$TARGET_NAME"-customize.sh not found or has errors"
-        rm $GITHUB_WORKSPACE/$REPO_FLODER/.config*
+        [ -e $GITHUB_WORKSPACE/$REPO_FLODER/.config ] && rm $GITHUB_WORKSPACE/$REPO_FLODER/.config*
         cp $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config $GITHUB_WORKSPACE/$REPO_FLODER/.config || exit 1
         sed -i '/CONFIG_DEVEL/d;/CONFIG_CCACHE/d;/CONFIG_BUILD_LOG/d' .config
         echo -e "\nCONFIG_DEVEL=y\nCONFIG_CCACHE=y\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
