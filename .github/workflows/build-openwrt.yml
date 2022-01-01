@@ -216,6 +216,7 @@ jobs:
         cd $GITHUB_WORKSPACE/$REPO_FLODER
         make clean
         rm -rf dl files logs tmp package/diy
+        [[ $CCACHE == false ]] && rm -rf .ccache
         git reset --hard
         echo "tar openwrt floder"
         cd $GITHUB_WORKSPACE
