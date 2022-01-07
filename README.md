@@ -1,5 +1,11 @@
 # 本项目为自用，不保证可用性
 
+Auto build OpenWrt firmware via GitHub Actions  
+
+[![GitHub Workflow Status](https://img.shields.io/github/workflow/status/EnnawYang/openwrt-fastbuild/Build%20OpenWrt?label=GITHUB%20ACTIONS&style=for-the-badge)](https://github.com/EnnawYang/openwrt-fastbuild/actions)  
+
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/EnnawYang/openwrt-fastbuild?style=for-the-badge&label=DOWNLOADS)](https://github.com/EnnawYang/openwrt-fastbuild/releases/latest)  
+
 ## 功能
 - 通过打包整个op项目使用rclone上传到GoogleDrive供二次编译使用从而达到一定加速效果  
 - 二次编译可以跳过编译tools和toolchain进一步加快编译速度  
