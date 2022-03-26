@@ -115,6 +115,7 @@ jobs:
         git clone $REPO_URL -b $REPO_BRANCH $REPO_FLODER --single-branch)
         cd $GITHUB_WORKSPACE/$REPO_FLODER
         rm -rf files logs tmp package/diy dl
+        ./scripts/feeds clean
         git reset --hard
         git pull && ./scripts/feeds update -a && ./scripts/feeds install -a
 
@@ -217,6 +218,7 @@ jobs:
         make clean
         rm -rf dl files logs tmp package/diy
         [[ $CCACHE == false ]] && rm -rf .ccache
+        ./scripts/feeds clean
         git reset --hard
         echo "tar openwrt floder"
         cd $GITHUB_WORKSPACE
