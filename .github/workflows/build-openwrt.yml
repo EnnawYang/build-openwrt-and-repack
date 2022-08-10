@@ -93,7 +93,7 @@ jobs:
         export CURRENT_HASH=$(git log --pretty=tformat:"%h" -n1 tools toolchain)
         echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_ENV
         echo "CURRENT_HASH is $CURRENT_HASH"
-        export CACHE_HASH=$(curl -fSsL https://github.com/$GITHUB_REPOSITORY/releases/download/$TOOLCHAIN_TAG/cache-hash.txt)
+        export CACHE_HASH=$(curl -fSsL https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/cache-hash.txt)
         echo "CACHE_HASH is $CACHE_HASH"
         if [ -z "$CACHE_HASH" ] || [ "$CURRENT_HASH" != "$CACHE_HASH" ]; then
           echo "::set-output name=COMPILE_TOOLCHAIN::true"
@@ -139,7 +139,7 @@ jobs:
       if: steps.compare.outputs.COMPILE_TOOLCHAIN == 'false'
       run: |
         cd $OPENWRTROOT
-        wget -qc https://github.com/$GITHUB_REPOSITORY/releases/download/$TOOLCHAIN_TAG/$TOOLCHAIN_PREFIX-$TARGET-$SUBTARGET.tar.xz -O - | tar -xJ
+        wget -qc https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/$TOOLCHAIN_PREFIX-$TARGET-$SUBTARGET.tar.xz -O - | tar -xJ
         find build_dir/{host*,toolchain-*} -name .built\* -exec touch {} \;
         touch staging_dir/{host*,toolchain-*,target-*}/stamp/.*
         # sed -i 's/ $(tool.*\/stamp-compile)//;' Makefile
