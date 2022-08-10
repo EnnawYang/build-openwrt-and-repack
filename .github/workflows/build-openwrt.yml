@@ -21,7 +21,6 @@ env:
   TOOLCHAIN_PREFIX: coolsnowwolf-lede-master
   TOOLCHAIN_TAG: toolchain
   RELEASE_BRANCH: main
-  RELEASE_TAG: prebuild
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   Notification: true
@@ -139,7 +138,7 @@ jobs:
       if: steps.compare.outputs.COMPILE_TOOLCHAIN == 'false'
       run: |
         cd $OPENWRTROOT
-        wget -qc https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/$TOOLCHAIN_PREFIX-$TARGET-$SUBTARGET.tar.xz -O - | tar -xJ
+        wget -c https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/$TOOLCHAIN_PREFIX-$TARGET-$SUBTARGET.tar.xz -O - | tar -xJ
         find build_dir/{host*,toolchain-*} -name .built\* -exec touch {} \;
         touch staging_dir/{host*,toolchain-*,target-*}/stamp/.*
         # sed -i 's/ $(tool.*\/stamp-compile)//;' Makefile
