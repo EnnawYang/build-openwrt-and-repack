@@ -4,18 +4,6 @@ on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
-      toolchain:
-        description: 'skip compile toolchain [true/false]'
-        required: false
-        default: 'true'
-      ccache:
-        description: 'apply ccache'
-        required: false
-        default: 'false'
-      tar:
-        description: 'upload openwrt .tar to GoogleDrive [true/false]'
-        required: false
-        default: 'true'
       release:
         description: 'upload firmware to release [true/false]'
         required: false
@@ -26,12 +14,14 @@ on:
         default: 'update'
 
 env:
-  REPO_URL: https://github.com/coolsnowwolf/lede
-  REPO_BRANCH: master
-  REPO_FLODER: openwrt
-  CONFIG_REPO: https://github.com/EnnawYang/openwrt-config
+  SOURCE_URL: https://github.com/coolsnowwolf/lede
+  SOURCE_BRANCH: master
+  CONFIG_URL: https://github.com/EnnawYang/openwrt-config
   CONFIG_BRANCH: lean-lede
-  CONFIG_FLODER: config-repo
+  TOOLCHAIN_PREFIX: coolsnowwolf-lede-master
+  TOOLCHAIN_TAG: toolchain
+  RELEASE_BRANCH: main
+  RELEASE_TAG: prebuild
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   Notification: true
@@ -43,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        targets: [x86_64, Rpi-4B, Newifi-D2, RM2100]
+        config_name: [x86_64, Rpi-4B, Newifi-D2, RM2100]
         # Ref: https://github.com/EnnawYang/openwrt-config
 
     steps:
@@ -69,87 +59,96 @@ jobs:
         sudo -E apt-get -qq clean
         sudo ln -fs /usr/share/zoneinfo/$TZ /etc/localtime
         sudo dpkg-reconfigure -f noninteractive tzdata
-        echo "TARGET_NAME=${{ matrix.targets }}" >> $GITHUB_ENV
-        echo "SKIP_TOOLCHAIN=${{ github.event.inputs.toolchain }}" >> $GITHUB_ENV
-        echo "CCACHE=${{ github.event.inputs.ccache }}"
-        echo "TAR=${{ github.event.inputs.tar }}" >> $GITHUB_ENV
+        echo "DEVICE_NAME=${{ matrix.config_name }}" >> $GITHUB_ENV
         echo "FILE_DATE=$(date +"%Y-%m-%d")" >> $GITHUB_ENV
+        export SOURCE_USER="$(echo $SOURCE_URL | awk -F '/' '{print $(NF-1)}')"
+        echo "SOURCE_USER=$SOURCE_USER" >> $GITHUB_ENV
+        export SOURCE_NAME="$(echo $SOURCE_URL | awk -F '/' '{print $(NF)}')"
+        echo "SOURCE_NAME=$SOURCE_NAME" >> $GITHUB_ENV
 
     - name: Checkout
       uses: actions/checkout@main
 
-    - name: Install Rclone
-      id: install_rclone
-      env:
-        RCLONE_NAME: ${{ secrets.RCLONE_NAME }}
-        RCLONE_CONFIG: ${{ secrets.RCLONE_CONFIG }}
-      if: env.RCLONE_NAME != null && env.RCLONE_CONFIG != null
-      run: |
-        curl https://rclone.org/install.sh | sudo bash
-        mkdir -p ~/.config/rclone/
-        cat << EOF > ~/.config/rclone/rclone.conf
-        ${{ secrets.RCLONE_CONFIG }}
-        EOF
+    - name: Check space usage before Compile
+      if: (!cancelled())
+      run: df -hT
 
-    - name: Download openwrt from GoogleDrive
-      id: download
-      env:
-        RCLONE_NAME: "${{ secrets.RCLONE_NAME }}"
-      if: steps.install_rclone.conclusion == 'success' && !cancelled()
-      run: |
-        cd $GITHUB_WORKSPACE
-        (rclone copy $RCLONE_NAME:openwrt/repack/$TARGET_NAME-openwrt.tar . --transfers=8 -v && \
-        tar -xvf $TARGET_NAME-openwrt.tar 2>&1 >/dev/null && \
-        rm *-openwrt.tar && \
-        sudo chown -R $USER:$GROUPS $REPO_FLODER) || \
-        echo ">>>> skip download ..."
-
-    - name: Update source code
-      id: source
+    - name: Clone Source Code
+      id: clone
       if: (!cancelled())
       run: |
         cd $GITHUB_WORKSPACE
-        git clone $CONFIG_REPO -b $CONFIG_BRANCH $CONFIG_FLODER --single-branch
-        ([ -d $GITHUB_WORKSPACE/$REPO_FLODER/.git ] && echo ">>>> update source code ...") || \
-        (echo ">>>> clone source code ..." && \
-        git clone $REPO_URL -b $REPO_BRANCH $REPO_FLODER --single-branch)
-        cd $GITHUB_WORKSPACE/$REPO_FLODER
-        rm -rf files logs tmp package/diy dl
-        ./scripts/feeds clean
-        git reset --hard
-        git pull && ./scripts/feeds update -a && ./scripts/feeds install -a
+        git clone $CONFIG_URL -b $CONFIG_BRANCH openwrt-config --single-branch
+        cd openwrt-config
+        echo "CONFIGROOT=$PWD" >> $GITHUB_ENV
+        cd $GITHUB_WORKSPACE
+        git clone $SOURCE_URL -b $SOURCE_BRANCH openwrt --single-branch
+        cd openwrt
+        echo "OPENWRTROOT=$PWD" >> $GITHUB_ENV
+
+    - name: Compare Toolchain Hash
+      id: compare
+      run: |
+        cd $OPENWRTROOT
+        export CURRENT_HASH=$(git log --pretty=tformat:"%h" -n1 tools toolchain)
+        echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_ENV
+        echo "CURRENT_HASH is $CURRENT_HASH"
+        export CACHE_HASH=$(curl -fSsL https://github.com/$GITHUB_REPOSITORY/releases/download/$TOOLCHAIN_TAG/cache-hash.txt)
+        echo "CACHE_HASH is $CACHE_HASH"
+        if [ -z "$CACHE_HASH" ] || [ "$CURRENT_HASH" != "$CACHE_HASH" ]; then
+          echo "::set-output name=COMPILE_TOOLCHAIN::true"
+        else
+          echo "::set-output name=COMPILE_TOOLCHAIN::false"
+        fi
+
+    - name: Install Feeds
+      id: feeds
+      if: steps.clone.conclusion == 'success' && !cancelled()
+      run: |
+        cd $OPENWRTROOT
+        ./scripts/feeds update -a 
+        ./scripts/feeds install -a
 
     - name: Load custom configuration
       id: custom
-      if: steps.source.conclusion == 'success' && !cancelled()
+      if: steps.feeds.conclusion == 'success' && !cancelled()
       run: |
-        cd $GITHUB_WORKSPACE/$REPO_FLODER
-        chmod +x $GITHUB_WORKSPACE/$CONFIG_FLODER/*.sh
-        $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh || echo -e ""$TARGET_NAME"-customize.sh not found or has errors"
-        [ -e $GITHUB_WORKSPACE/$REPO_FLODER/.config ] && rm $GITHUB_WORKSPACE/$REPO_FLODER/.config*
-        cp $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config $GITHUB_WORKSPACE/$REPO_FLODER/.config || exit 1
+        cd $OPENWRTROOT
+        chmod +x $CONFIGROOT/*.sh
+        $CONFIGROOT/"$DEVICE_NAME"-customize.sh || echo -e ""$DEVICE_NAME"-customize.sh not found or has errors"
+        cp $CONFIGROOT/"$DEVICE_NAME".config .config || exit 1
         sed -i '/CONFIG_DEVEL/d;/CONFIG_CCACHE/d;/CONFIG_BUILD_LOG/d' .config
         echo -e "\nCONFIG_DEVEL=y\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
-        [[ $CCACHE == true ]] && echo -e "\nCONFIG_CCACHE=y" >> .config
         make defconfig
+        export TARGET="$(grep -v ^# .config | grep _DEVICE_ | cut -d_ -f3)"
+        echo "TARGET=$TARGET" >> $GITHUB_ENV
+        export SUBTARGET="$(grep -v ^# .config | grep _DEVICE_ | cut -d_ -f4)"
+        echo "SUBTARGET=$SUBTARGET" >> $GITHUB_ENV
 
     - name: Download package
-      id: package
+      id: download
       if: steps.custom.conclusion == 'success' && !cancelled()
       run: |
-        cd $GITHUB_WORKSPACE/$REPO_FLODER
-        [ -d $GITHUB_WORKSPACE/$REPO_FLODER/dl ] && rm -rf $GITHUB_WORKSPACE/$REPO_FLODER/dl
+        cd $OPENWRTROOT
         make download -j16
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
-        (([[ $SKIP_TOOLCHAIN == true ]] && [ -d build_dir ]) && find build_dir/{host*,toolchain-*} -name .built\* -exec touch {} \;) || echo "skip touch build_dir"
-        (([[ $SKIP_TOOLCHAIN == true ]] && [ -d staging_dir ]) && touch staging_dir/{host*,toolchain-*}/stamp/.*) || echo "skip touch staging_dir"
 
-    - name: Compile the firmware (${{ matrix.targets }})
+    - name: Fetch Cached Toolchain
+      id: fetch
+      if: steps.compare.outputs.COMPILE_TOOLCHAIN == 'false'
+      run: |
+        cd $OPENWRTROOT
+        wget -qc https://github.com/$GITHUB_REPOSITORY/releases/download/$TOOLCHAIN_TAG/$TOOLCHAIN_PREFIX-$TARGET-$SUBTARGET.tar.xz -O - | tar -xJ
+        find build_dir/{host*,toolchain-*} -name .built\* -exec touch {} \;
+        touch staging_dir/{host*,toolchain-*,target-*}/stamp/.*
+        # sed -i 's/ $(tool.*\/stamp-compile)//;' Makefile
+
+    - name: Compile firmware (${{ matrix.config_name }})
       id: compile
       if: (!cancelled())
       run: |
-        cd $GITHUB_WORKSPACE/$REPO_FLODER
+        cd $OPENWRTROOT
         echo -e ">>>> $(nproc) thread compile ..."
         make -j$(nproc)
 
@@ -161,21 +160,21 @@ jobs:
       uses: actions/upload-artifact@v2
       if: steps.compile.conclusion == 'failure' && !cancelled()
       with:
-        name: Logs_${{ env.TARGET_NAME }}_${{ env.FILE_DATE }}
-        path: ${{ github.workspace }}/${{ env.REPO_FLODER }}/logs
+        name: Logs_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
+        path: ${{ env.OPENWRTROOT }}/logs
 
     - name: Upload bin directory
       uses: actions/upload-artifact@v2
       if: steps.compile.conclusion == 'success' && env.UPLOAD_BIN_DIR == 'true' && !cancelled()
       with:
-        name: Bin_${{ env.TARGET_NAME }}_${{ env.FILE_DATE }}
-        path: ${{ github.workspace }}/${{ env.REPO_FLODER }}/bin
+        name: Bin_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
+        path: ${{ env.OPENWRTROOT }}/bin
 
     - name: Organize files
       id: organize
       if: steps.compile.conclusion == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        cd $GITHUB_WORKSPACE/$REPO_FLODER/bin/targets/*/*
+        cd $OPENWRTROOT/bin/targets/*/*
         rm -rf packages
         rm *.buildinfo *sums
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
@@ -184,13 +183,8 @@ jobs:
       uses: actions/upload-artifact@v2
       if: steps.organize.conclusion == 'success' && !cancelled()
       with:
-        name: Firmware_${{ env.TARGET_NAME }}_${{ env.FILE_DATE }}
+        name: Firmware_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
-
-    - name: Upload firmware to Google Drive
-      if: steps.organize.conclusion == 'success' && steps.install_rclone.conclusion == 'success' && !cancelled()
-      run: |
-        rclone copy ${{ env.FIRMWARE }} ${{ secrets.RCLONE_NAME }}:openwrt/$TARGET_NAME/$(date +"%Y-%m-%d-%H%M") --transfers=8
 
     - name: Generate release tag
       id: tag
@@ -210,30 +204,6 @@ jobs:
         bodyFile: release.txt
         artifacts: ${{ env.FIRMWARE }}/*
 
-    - name: tar openwrt floder
-      id: tar
-      if: steps.compile.conclusion == 'success' && steps.install_rclone.conclusion == 'success' && env.TAR == 'true' && !cancelled()
-      run: |
-        cd $GITHUB_WORKSPACE/$REPO_FLODER
-        make clean
-        rm -rf dl files logs tmp package/diy
-        [[ $CCACHE == false ]] && rm -rf .ccache
-        ./scripts/feeds clean
-        git reset --hard
-        echo "tar openwrt floder"
-        cd $GITHUB_WORKSPACE
-        tar cf $TARGET_NAME-openwrt.tar $REPO_FLODER
-        df -hT $PWD
-        echo "rm openwrt floder"
-        rm -rf $REPO_FLODER
-        df -hT $PWD
-
-    - name: upload openwrt tar to GoogleDrive
-      id: upload_tar
-      if: steps.tar.conclusion == 'success' && !cancelled()
-      run: |
-        rclone sync $TARGET_NAME-openwrt.tar ${{ secrets.RCLONE_NAME }}:openwrt/repack/ --transfers=8 -v
-
     - name: Remove old Releases
       if: github.event.inputs.release == 'true' && !cancelled()
       uses: dev-drprasad/delete-older-releases@v0.2.0
@@ -246,5 +216,5 @@ jobs:
     - name: Notification
       if: steps.compile.conclusion == 'success' && env.Notification == 'true' && !cancelled()
       run: |
-        curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendMessage -d chat_id=${{ secrets.TG_CHAT_ID }} -d text=""$TARGET_NAME" compile succeeded" 2>&1 >/dev/null || echo "Telegram notification failed"
-        # curl -s -X POST https://sctapi.ftqq.com/${{ secrets.SCTKEY }}.send?title=""$TARGET_NAME" compile succeeded" 2>&1 >/dev/null || echo "Wechat notification failed"
+        curl -s -X POST https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendMessage -d chat_id=${{ secrets.TG_CHAT_ID }} -d text=""$DEVICE_NAME" compile succeeded" 2>&1 >/dev/null || echo "Telegram notification failed"
+        # curl -s -X POST https://sctapi.ftqq.com/${{ secrets.SCTKEY }}.send?title=""$DEVICE_NAME" compile succeeded" 2>&1 >/dev/null || echo "Wechat notification failed"
