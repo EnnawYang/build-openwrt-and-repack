@@ -117,7 +117,7 @@ jobs:
         $CONFIGROOT/"$DEVICE_NAME"-customize.sh || echo -e ""$DEVICE_NAME"-customize.sh not found or has errors"
         cp $CONFIGROOT/"$DEVICE_NAME".config .config || exit 1
         sed -i '/CONFIG_DEVEL/d;/CONFIG_CCACHE/d;/CONFIG_BUILD_LOG/d' .config
-        echo -e "\nCONFIG_DEVEL=y\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
+        echo -e "\nCONFIG_DEVEL=y\nCONFIG_CCACHE=y\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
         make defconfig
         export TARGET="$(grep -v ^# .config | grep _DEVICE_ | cut -d_ -f3)"
         echo "TARGET=$TARGET" >> $GITHUB_ENV
