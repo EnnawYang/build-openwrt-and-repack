@@ -131,15 +131,35 @@ jobs:
         rm -rf files logs tmp package/diy dl
         ./scripts/feeds clean
         git reset --hard
-        git pull && ./scripts/feeds update -a && ./scripts/feeds install -a
+        git pull
+
+    - name: Update feeds
+      id: update_feeds
+      if: steps.source.conclusion == 'success' && !cancelled()
+      run: |
+        cd $GITHUB_WORKSPACE/$REPO_FLODER
+        ./scripts/feeds update -a
 
     - name: Load custom configuration
       id: custom
-      if: steps.source.conclusion == 'success' && !cancelled()
+      if: steps.update_feeds.conclusion == 'success' && !cancelled()
       run: |
         cd $GITHUB_WORKSPACE/$REPO_FLODER
         chmod +x $GITHUB_WORKSPACE/$CONFIG_FLODER/*.sh
         $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME"-customize.sh || echo -e ""$TARGET_NAME"-customize.sh not found or has errors"
+
+    - name: Install feeds
+      id: install_feeds
+      if: steps.custom.conclusion == 'success' && !cancelled()
+      run: |
+        cd $GITHUB_WORKSPACE/$REPO_FLODER
+        ./scripts/feeds install -a
+
+    - name: Prepare config file
+      id: prepare_config
+      if: steps.custom.conclusion == 'success' && !cancelled()
+      run: |
+        cd $GITHUB_WORKSPACE/$REPO_FLODER
         [ -e $GITHUB_WORKSPACE/$REPO_FLODER/.config ] && rm $GITHUB_WORKSPACE/$REPO_FLODER/.config*
         cp $GITHUB_WORKSPACE/$CONFIG_FLODER/"$TARGET_NAME".config $GITHUB_WORKSPACE/$REPO_FLODER/.config || exit 1
         sed -i '/CONFIG_DEVEL/d;/CONFIG_CCACHE/d;/CONFIG_BUILD_LOG/d' .config
