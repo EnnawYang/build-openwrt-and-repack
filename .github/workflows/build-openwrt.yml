@@ -87,6 +87,7 @@ jobs:
 
     - name: Compare Toolchain Hash
       id: compare
+      if: steps.clone.conclusion == 'success' && !cancelled()
       run: |
         cd $OPENWRTROOT
         export CURRENT_HASH=$(git log --pretty=tformat:"%h" -n1 tools toolchain)
@@ -95,81 +96,128 @@ jobs:
         export CACHE_HASH=$(curl -fSsL https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/cache-hash.txt)
         echo "CACHE_HASH is $CACHE_HASH"
         if [ -z "$CACHE_HASH" ] || [ "$CURRENT_HASH" != "$CACHE_HASH" ]; then
-          echo "::set-output name=COMPILE_TOOLCHAIN::true"
+          echo "COMPILE_TOOLCHAIN=true" >> $GITHUB_OUTPUT
         else
-          echo "::set-output name=COMPILE_TOOLCHAIN::false"
+          echo "COMPILE_TOOLCHAIN=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Install Feeds
-      id: feeds
-      if: steps.clone.conclusion == 'success' && !cancelled()
+    - name: Update Feeds
+      id: update_feeds
+      if: steps.compare.outputs.COMPILE_TOOLCHAIN == 'false'
       run: |
         cd $OPENWRTROOT
         ./scripts/feeds update -a 
-        ./scripts/feeds install -a
 
     - name: Load custom configuration
       id: custom
-      if: steps.feeds.conclusion == 'success' && !cancelled()
+      if: steps.update_feeds.conclusion == 'success' && !cancelled()
       run: |
         cd $OPENWRTROOT
         chmod +x $CONFIGROOT/*.sh
         $CONFIGROOT/"$DEVICE_NAME"-customize.sh || echo -e ""$DEVICE_NAME"-customize.sh not found or has errors"
+
+    - name: Install Feeds
+      id: install_feeds
+      if: steps.custom.conclusion == 'success' && !cancelled()
+      run: |
+        cd $OPENWRTROOT
+        ./scripts/feeds install -a -f
+
+    - name: Prepare config file
+      id: config
+      if: steps.install_feeds.conclusion == 'success' && !cancelled()
+      run: |
+        cd $OPENWRTROOT
         cp $CONFIGROOT/"$DEVICE_NAME".config .config || exit 1
         sed -i '/CONFIG_DEVEL/d;/CONFIG_CCACHE/d;/CONFIG_BUILD_LOG/d' .config
         echo -e "\nCONFIG_DEVEL=y\nCONFIG_CCACHE=y\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
+        export DEVICE_TARGET="$(grep -v ^\# .config | grep _DEVICE_ | cut -d_ -f3)"
+        echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
+        export DEVICE_SUBTARGET="$(grep -v ^\# .config | grep _DEVICE_ | cut -d_ -f4)"
+        echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
         make defconfig
-        export TARGET="$(grep -v ^# .config | grep _DEVICE_ | cut -d_ -f3)"
-        echo "TARGET=$TARGET" >> $GITHUB_ENV
-        export SUBTARGET="$(grep -v ^# .config | grep _DEVICE_ | cut -d_ -f4)"
-        echo "SUBTARGET=$SUBTARGET" >> $GITHUB_ENV
 
     - name: Download package
       id: download
-      if: steps.custom.conclusion == 'success' && !cancelled()
+      if: steps.config.conclusion == 'success' && !cancelled()
       run: |
         cd $OPENWRTROOT
         make download -j16
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: Fetch Cached Toolchain
-      id: fetch
-      if: steps.compare.outputs.COMPILE_TOOLCHAIN == 'false'
+    - name: Fetch Cached Tools
+      id: fetch_tools
+      if: steps.compare.outputs.COMPILE_TOOLCHAIN == 'false' && steps.config.conclusion == 'success' && !cancelled()
       run: |
         cd $OPENWRTROOT
-        wget -c https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/$TOOLCHAIN_PREFIX-$TARGET-$SUBTARGET.tar.xz -O - | tar -xJ
-        find build_dir/{host*,toolchain-*} -name .built\* -exec touch {} \;
-        touch staging_dir/{host*,toolchain-*,target-*}/stamp/.*
-        # sed -i 's/ $(tool.*\/stamp-compile)//;' Makefile
+        rm -rf build_dir staging_dir
+        [ -d .ccache ] && rm -rf .ccache
+        curl -L --retry 3 https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/$TOOLCHAIN_PREFIX-$DEVICE_TARGET-$DEVICE_SUBTARGET-tools.tar.xz | tar -xJ
+        sudo chown -R $USER:$GROUPS build_dir
+        sudo chown -R $USER:$GROUPS staging_dir
+        [ -d .ccache ] && sudo chown -R $USER:$GROUPS .ccache
+        find build_dir/host* -name .built\* -exec touch {} \;
+        touch staging_dir/{host*,target-*}/stamp/.*
 
-    - name: Compile firmware (${{ matrix.config_name }})
+    - name: Fetch Cached Toolchain
+      id: fetch_toolchain
+      if: steps.compare.outputs.COMPILE_TOOLCHAIN == 'false' && steps.fetch_tools.conclusion == 'success' && !cancelled()
+      run: |
+        cd $OPENWRTROOT
+        curl -L --retry 3 https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/$TOOLCHAIN_PREFIX-$DEVICE_TARGET-$DEVICE_SUBTARGET-toolchain.tar.bz2 | tar -xjv
+        cd $(ls -d */ | grep openwrt-toolchain-) && TDIR1=$(basename `pwd`)
+        cd $(ls -d */ | grep toolchain-) && TDIR2=$(basename `pwd`)
+        cd $OPENWRTROOT
+        echo "toolchain floder is $TDIR1/$TDIR2"
+        ./scripts/ext-toolchain.sh \
+        --toolchain $TDIR1/$TDIR2 \
+        --overwrite-config \
+        --config $DEVICE_TARGET/$DEVICE_SUBTARGET
+
+    - name: Compile Tools
+      id: tools
+      if: steps.fetch_toolchain.conclusion == 'success' && !cancelled()
+      run: |
+        cd $OPENWRTROOT
+        echo -e ">>>> $(nproc) thread compile ..."
+        make tools/compile -j$(nproc)
+
+    - name: Compile Toolchain
+      id: toolchain
+      if: steps.tools.conclusion == 'success' && !cancelled()
+      run: |
+        cd $OPENWRTROOT
+        echo -e ">>>> $(nproc) thread compile ..."
+        make toolchain/compile -j$(nproc)
+
+    - name: Compile Firmware
       id: compile
-      if: (!cancelled())
+      if: steps.toolchain.conclusion == 'success' && !cancelled()
       run: |
         cd $OPENWRTROOT
         echo -e ">>>> $(nproc) thread compile ..."
         make -j$(nproc)
 
-    - name: Check space usage after Compile
+    - name: Check Space Usage After Compile
       if: (!cancelled())
       run: df -hT
 
-    - name: Upload error logs
-      uses: actions/upload-artifact@v2
+    - name: Upload Error Logs
+      uses: actions/upload-artifact@v3
       if: steps.compile.conclusion == 'failure' && !cancelled()
       with:
         name: Logs_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
         path: ${{ env.OPENWRTROOT }}/logs
 
-    - name: Upload bin directory
-      uses: actions/upload-artifact@v2
+    - name: Upload Bin Directory
+      uses: actions/upload-artifact@v3
       if: steps.compile.conclusion == 'success' && env.UPLOAD_BIN_DIR == 'true' && !cancelled()
       with:
         name: Bin_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
         path: ${{ env.OPENWRTROOT }}/bin
 
-    - name: Organize files
+    - name: Organize Files
       id: organize
       if: steps.compile.conclusion == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
@@ -178,22 +226,22 @@ jobs:
         rm *.buildinfo *sums
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
 
-    - name: Upload firmware directory
-      uses: actions/upload-artifact@v2
+    - name: Upload Firmware Directory
+      uses: actions/upload-artifact@v3
       if: steps.organize.conclusion == 'success' && !cancelled()
       with:
         name: Firmware_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
-    - name: Generate release tag
+    - name: Generate Release Tag
       id: tag
       if: github.event.inputs.release == 'true' && steps.compile.conclusion == 'success' && !cancelled()
       run: |
-        echo "::set-output name=release_tag::$FILE_DATE"
+        echo "release_tag=$FILE_DATE" >> $GITHUB_OUTPUT
         touch release.txt
         echo -e "${{ github.event.inputs.release_note }}" > release.txt
 
-    - name: Upload firmware to release
+    - name: Upload Firmware To Release
       if: steps.tag.conclusion == 'success' && !cancelled()
       uses: ncipollo/release-action@v1
       with:
@@ -203,13 +251,13 @@ jobs:
         bodyFile: release.txt
         artifacts: ${{ env.FIRMWARE }}/*
 
-    - name: Remove old Releases
-      if: github.event.inputs.release == 'true' && !cancelled()
+    - name: Remove Old Releases
+      if: (!cancelled())
       uses: dev-drprasad/delete-older-releases@v0.2.0
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        keep_latest: 10
+        keep_latest: 15
         delete_tags: true
 
     - name: Notification
