@@ -130,7 +130,7 @@ jobs:
         cd $OPENWRTROOT
         cp $CONFIGROOT/"$DEVICE_NAME".config .config || exit 1
         sed -i '/CONFIG_DEVEL/d;/CONFIG_CCACHE/d;/CONFIG_BUILD_LOG/d' .config
-        echo -e "\nCONFIG_DEVEL=y\nCONFIG_CCACHE=y\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
+        echo -e "\nCONFIG_DEVEL=y\nCONFIG_CCACHE=n\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
         export DEVICE_TARGET="$(grep -v ^\# .config | grep _DEVICE_ | cut -d_ -f3)"
         echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
         export DEVICE_SUBTARGET="$(grep -v ^\# .config | grep _DEVICE_ | cut -d_ -f4)"
@@ -146,23 +146,9 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: Fetch Cached Tools
-      id: fetch_tools
-      if: steps.compare.outputs.COMPILE_TOOLCHAIN == 'false' && steps.config.conclusion == 'success' && !cancelled()
-      run: |
-        cd $OPENWRTROOT
-        rm -rf build_dir staging_dir
-        [ -d .ccache ] && rm -rf .ccache
-        curl -L --retry 3 https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/$TOOLCHAIN_PREFIX-$DEVICE_TARGET-$DEVICE_SUBTARGET-tools.tar.xz | tar -xJ
-        sudo chown -R $USER:$GROUPS build_dir
-        sudo chown -R $USER:$GROUPS staging_dir
-        [ -d .ccache ] && sudo chown -R $USER:$GROUPS .ccache
-        find build_dir/host* -name .built\* -exec touch {} \;
-        touch staging_dir/{host*,target-*}/stamp/.*
-
     - name: Fetch Cached Toolchain
-      id: fetch_toolchain
-      if: steps.compare.outputs.COMPILE_TOOLCHAIN == 'false' && steps.fetch_tools.conclusion == 'success' && !cancelled()
+      id: fetch
+      if: steps.compare.outputs.COMPILE_TOOLCHAIN == 'false' && steps.config.conclusion == 'success' && !cancelled()
       run: |
         cd $OPENWRTROOT
         curl -L --retry 3 https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/$TOOLCHAIN_PREFIX-$DEVICE_TARGET-$DEVICE_SUBTARGET-toolchain.tar.bz2 | tar -xjv
@@ -177,7 +163,7 @@ jobs:
 
     - name: Compile Tools
       id: tools
-      if: steps.fetch_toolchain.conclusion == 'success' && !cancelled()
+      if: steps.fetch.conclusion == 'success' && !cancelled()
       run: |
         cd $OPENWRTROOT
         echo -e ">>>> $(nproc) thread compile ..."
