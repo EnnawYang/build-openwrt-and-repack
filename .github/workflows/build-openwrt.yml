@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config_name: [x86_64, Rpi-4B, Newifi-D2, RM2100]
+        config_name: [x86_64, Rpi-4B, Newifi-D2, RM2100, DomyWifi-DW33D]
         # Ref: https://github.com/EnnawYang/openwrt-config
 
     steps:
