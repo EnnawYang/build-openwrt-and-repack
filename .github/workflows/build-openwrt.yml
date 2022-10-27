@@ -136,10 +136,26 @@ jobs:
         export DEVICE_SUBTARGET="$(grep -v ^\# .config | grep _DEVICE_ | cut -d_ -f4)"
         echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
         make defconfig
+        export DEVICE_ARCH="$(grep -v ^\# .config | grep CONFIG_ARCH= | cut -d\" -f2)"
+        echo "DEVICE_ARCH=$DEVICE_ARCH" >> $GITHUB_ENV
+
+    - name: Fetch Cached Tools
+      id: fetch_tools
+      if: steps.compare.outputs.COMPILE_TOOLCHAIN == 'false' && steps.config.conclusion == 'success' && !cancelled()
+      run: |
+        cd $OPENWRTROOT
+        rm -rf build_dir staging_dir
+        wget -c -t=3 https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/$TOOLCHAIN_PREFIX-$DEVICE_TARGET-$DEVICE_SUBTARGET-tools.tar.xz
+        ./scripts/ext-tools.sh --tools *-tools.tar.xz
+        rm *.tar.xz
+        sudo chown -R $USER:$GROUPS build_dir
+        sudo chown -R $USER:$GROUPS staging_dir
+        sed -i 's/ $(tool.*\/stamp-compile)//;' Makefile
+        sed -i 's/ $(tool.*\/stamp-install)//;' Makefile
 
     - name: Download package
       id: download
-      if: steps.config.conclusion == 'success' && !cancelled()
+      if: steps.fetch_tools.conclusion == 'success' && !cancelled()
       run: |
         cd $OPENWRTROOT
         make download -j16
@@ -160,8 +176,8 @@ jobs:
         --toolchain $TDIR1/$TDIR2 \
         --overwrite-config \
         --config $DEVICE_TARGET/$DEVICE_SUBTARGET
-        rm -rf staging_dir/toolchain-*
-        cp -R $TDIR1/$TDIR2 staging_dir/toolchain-$DEVICE_TARGET\_$DEVICE_SUBTARGET-openwrt-linux-musl
+        # rm -rf staging_dir/toolchain-*
+        cp -R $TDIR1/$TDIR2 staging_dir/toolchain-$DEVICE_ARCH-openwrt-linux-musl
 
     - name: Compile Tools
       id: tools
