@@ -129,8 +129,8 @@ jobs:
       run: |
         cd $OPENWRTROOT
         cp $CONFIGROOT/"$DEVICE_NAME".config .config || exit 1
-        sed -i '/CONFIG_DEVEL/d;/CONFIG_CCACHE/d;/CONFIG_BUILD_LOG/d' .config
-        echo -e "\nCONFIG_DEVEL=y\nCONFIG_CCACHE=n\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
+        sed -i '/CONFIG_DEVEL/d;/CONFIG_AUTOREMOVE/d;/CONFIG_CCACHE/d;/CONFIG_BUILD_LOG/d' .config
+        echo -e "\nCONFIG_DEVEL=y\nCONFIG_AUTOREMOVE=y\nCONFIG_CCACHE=y\nCONFIG_BUILD_LOG=y\nCONFIG_BUILD_LOG_DIR=\"./logs\"" >> .config
         export DEVICE_TARGET="$(grep -v ^\# .config | grep _DEVICE_ | cut -d_ -f3)"
         echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
         export DEVICE_SUBTARGET="$(grep -v ^\# .config | grep _DEVICE_ | cut -d_ -f4)"
