@@ -1,4 +1,4 @@
-name: Build OpenWrt
+name: Build OpenWrt With Cached Toolchain
 
 on:
   repository_dispatch:
