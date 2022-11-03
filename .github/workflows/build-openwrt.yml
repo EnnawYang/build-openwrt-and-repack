@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        config_name: [x86_64, Rpi-4B, Newifi-D2, RM2100, DomyWifi-DW33D]
+        CONFIG_NAME: [x86_64, rpi-4, d-team_newifi-d2, redmi-ac2100, domywifi_dw33d]
         # Ref: https://github.com/EnnawYang/openwrt-config
 
     steps:
@@ -58,7 +58,7 @@ jobs:
         sudo -E apt-get -qq clean
         sudo ln -fs /usr/share/zoneinfo/$TZ /etc/localtime
         sudo dpkg-reconfigure -f noninteractive tzdata
-        echo "DEVICE_NAME=${{ matrix.config_name }}" >> $GITHUB_ENV
+        echo "DEVICE_NAME=${{ matrix.CONFIG_NAME }}" >> $GITHUB_ENV
         echo "FILE_DATE=$(date +"%Y-%m-%d")" >> $GITHUB_ENV
         export SOURCE_USER="$(echo $SOURCE_URL | awk -F '/' '{print $(NF-1)}')"
         echo "SOURCE_USER=$SOURCE_USER" >> $GITHUB_ENV
@@ -127,7 +127,7 @@ jobs:
       run: |
         cd $OPENWRTROOT
         chmod +x $CONFIGROOT/*.sh
-        $CONFIGROOT/"$DEVICE_NAME"-customize.sh || echo -e ""$DEVICE_NAME"-customize.sh not found or has errors"
+        $CONFIGROOT/"$DEVICE_NAME".sh || echo -e ""$DEVICE_NAME".sh not found or has errors"
 
     - name: Install Feeds
       id: install_feeds
