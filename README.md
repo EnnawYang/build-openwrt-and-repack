@@ -16,17 +16,17 @@ Auto build OpenWrt firmware via GitHub Actions
 - TG_CHAT_ID (telegram id，用于通知)  
 
 项目调用 [EnnawYang/openwrt-config](https://github.com/EnnawYang/openwrt-config) 作为配置文件库，可在env处更换仓库地址  
-调用 `设备名.config` 和 `设备名-customize.sh`  
-**需要配合预编译工具链，否则没有提速效果，工具链源码仓库要与编译固件的源码仓库一致**  
+调用 `设备名.config` 和 `设备名.sh`  
+**需要配合预编译工具链，否则否则会自动停止编译，工具链源码仓库要与编译固件的源码仓库一致**  
 
 ## 使用方法
 yml中config_name填写格式示例：  
 ```  
 matrix:
-  config_name: [x86_64, Rpi-4B, Newifi-D2]
+  config_name: [x86_64, rpi-4, d-team_newifi-d2]
 ```  
 **注意英文逗号和空格**  
-对应 `设备名.config` 和 `设备名-customize.sh`  
+对应 `设备名.config` 和 `设备名.sh`  
 
 # Thanks
 [P3TERX/Actions-OpenWrt](https://github.com/P3TERX/Actions-OpenWrt)  
@@ -34,5 +34,3 @@ matrix:
 [SuLingGG/OpenWrt-Cache](https://github.com/SuLingGG/OpenWrt-Cache)  
 [klever1988/cachewrtbuild](https://github.com/klever1988/cachewrtbuild)
 
-# 写在最后
-没有一定排错能力请不要使用本项目
