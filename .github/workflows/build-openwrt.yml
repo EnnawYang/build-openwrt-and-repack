@@ -190,7 +190,7 @@ jobs:
       if: steps.modify.conclusion == 'success' && !cancelled()
       run: |
         cd $OPENWRTROOT
-        curl -L --retry 3 https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/$TARGET_INFO-$DEVICE_TARGET-$DEVICE_SUBTARGET-toolchain.tar.bz2 | tar -xj
+        curl -L --retry 3 https://github.com/EnnawYang/OpenWrt-Toolchain-Cache/releases/download/$TOOLCHAIN_TAG/$TARGET_INFO-$DEVICE_TARGET-$DEVICE_SUBTARGET-toolchain.tar.xz | tar -xJ
         cd $(ls -d */ | grep openwrt-toolchain-) && cd $(ls -d */ | grep toolchain-) && TOOLCHAIN_DIR=$(pwd)
         cd $OPENWRTROOT
         echo "toolchain floder is $TOOLCHAIN_DIR"
